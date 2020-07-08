@@ -2,9 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
-#include "driver/timer.h"
 
-int counter;
 int butflag;
 gpio_num_t array[3] = {33,32,16};
 
@@ -24,7 +22,6 @@ void GPIO_init(){
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
-    counter++;
 	butflag = 1;
 }
 
@@ -36,12 +33,12 @@ void app_main(void){
 	gpio_set_direction(39,GPIO_MODE_DEF_INPUT);
 	
 	//change gpio intrrupt type for one pin
-    gpio_set_intr_type(39, GPIO_PIN_INTR_POSEDGE);
+   	gpio_set_intr_type(39, GPIO_PIN_INTR_POSEDGE);
 
-    //install gpio isr service
-    gpio_install_isr_service(0);
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(39, gpio_isr_handler, (void*) 39);
+    	//install gpio isr service
+    	gpio_install_isr_service(0);
+    	//hook isr handler for specific gpio pin
+    	gpio_isr_handler_add(39, gpio_isr_handler, (void*) 39);
 	
 	timer_config_t timer;
 	
