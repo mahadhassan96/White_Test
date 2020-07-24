@@ -1,0 +1,107 @@
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/timer.h"
+#include "soc/timer_group_struct.h"
+
+const uint32_t divider = 80;
+#define alarm_tick_10 50000
+#define alarm_tick_8_5 58823
+#define alarm_tick_6_5 76923
+
+volatile int a;
+int butflag;
+gpio_num_t array[3] = {alarm_tick_10, alarm_tick_8_5,alarm_tick_6_5};
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+	butflag = 1;
+}
+
+void IRAM_ATTR timer_group0_isr(void *para){
+	
+	uint32_t intr_status = TIMERG0.int_st_timers.val;
+      int timer_idx = (int) para;
+	  if((intr_status & BIT(timer_idx)) && timer_idx == TIMER_0) {
+          TIMERG0.hw_timer[timer_idx].update = 1;
+          TIMERG0.int_clr_timers.t0 = 1;
+          TIMERG0.hw_timer[timer_idx].config.alarm_en = 1;
+          gpio_set_level(GPIO_NUM_33,a%2);
+		  gpio_set_level(GPIO_NUM_32,a%2);
+		  gpio_set_level(GPIO_NUM_16, a%2);
+          a++;
+      }
+}
+
+void GPIO_init(){
+	gpio_set_direction(33,GPIO_MODE_DEF_OUTPUT);
+	gpio_set_direction(32, GPIO_MODE_DEF_OUTPUT);
+	gpio_set_direction(16,GPIO_MODE_DEF_OUTPUT);
+	
+	gpio_pullup_dis(GPIO_NUM_16);
+	gpio_pullup_dis(GPIO_NUM_33);
+	gpio_pullup_dis(GPIO_NUM_32);
+	
+	gpio_set_level(32, 0);
+	gpio_set_level(16, 0);
+	gpio_set_level(33, 0);
+	
+	gpio_set_direction(39,GPIO_MODE_DEF_INPUT);
+	
+	//change gpio intrrupt type for one pin
+   	gpio_set_intr_type(39, GPIO_PIN_INTR_POSEDGE);
+
+    //install gpio isr service
+    gpio_install_isr_service(0);
+    //hook isr handler for specific gpio pin
+    gpio_isr_handler_add(39, gpio_isr_handler, (void*) 39);
+}
+
+void timer0_init(timer_config_t timer,uint64_t freq){
+	timer.alarm_en = TIMER_ALARM_EN;
+	timer.counter_en = TIMER_PAUSE;
+	timer.intr_type = TIMER_INTR_LEVEL;
+	timer.counter_dir = TIMER_COUNT_UP;
+	timer.auto_reload = TIMER_AUTORELOAD_EN;
+	timer.divider = divider;
+	
+	timer_init(TIMER_GROUP_0, TIMER_0, &timer);
+	timer_pause(TIMER_GROUP_0, TIMER_0);
+	timer_set_counter_value(TIMER_GROUP_0, TIMER_0, 0x00000000ULL);
+	timer_set_alarm_value(TIMER_GROUP_0, TIMER_0, freq);
+	
+	timer_enable_intr(TIMER_GROUP_0, TIMER_0);
+	timer_isr_register(TIMER_GROUP_0, TIMER_0, timer_group0_isr, (void*) TIMER_0, ESP_INTR_FLAG_IRAM, NULL);
+	
+	timer_start(TIMER_GROUP_0, TIMER_0);
+}
+
+void app_main(void){
+	timer_config_t timer;
+	a = 0;
+	int i = 1;
+	GPIO_init();
+	timer0_init(timer,array[i]);
+	while(1){
+		if(butflag){
+			timer_pause(TIMER_GROUP_0, TIMER_0);
+			gpio_set_level(GPIO_NUM_33,0);
+			gpio_set_level(GPIO_NUM_32,0);
+			gpio_set_level(GPIO_NUM_16, 0);
+			vTaskDelay(1000 / portTICK_PERIOD_MS);
+			if(i==1){
+				i = 2;
+			}
+			else if(i==2){
+				i = 0;
+			}
+			else if(i==0){
+				i = 1;
+			}
+			timer0_init(timer,array[i]);
+			butflag=0;
+		}
+		vTaskDelay(10 / portTICK_PERIOD_MS);
+	}
+}
